@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <iostream>
 #include <string>
 #include <string_view>
 
+using std::string;
 class Reader;
 class Writer;
 
@@ -24,7 +26,13 @@ public:
 protected:
   // Please add any additional state to the ByteStream here, and not to the Writer and Reader interfaces.
   uint64_t capacity_;
-  bool error_ {};
+  bool error_ { false };
+  uint64_t begin_ { 0 };
+  uint64_t end_ { 0 };
+  string content_;
+  uint64_t pushed_cnt_ { 0 }; //
+  uint64_t popped_cnt_ { 0 };
+  bool is_closed_ { false };
 };
 
 class Writer : public ByteStream
