@@ -46,11 +46,12 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
   // seg:     |
   else if ( first_index < next_ + avail_cap_ ) {
     // buf:    |-----------|
-    // data:        |------------|
+    // seg:        |------------|
     if ( next_ + avail_cap_ < first_index + data.size() ) {
-      segs_.emplace( first_index, string_view( data.data(), avail_cap_ - ( first_index - next_ ) ) );
+      // segs_.emplace( first_index, string_view( data.data(), avail_cap_ - ( first_index - next_ ) ) );
+      segs_.emplace( std::move( data ), first_index, next_ + avail_cap_, 0 );
     } else {
-      segs_.emplace( first_index, data );
+      segs_.emplace( first_index, std::move( data ) );
     }
   } else {
     return;
@@ -73,10 +74,10 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
     // next:  |
     // seg: |----|
     if ( next_ >= it->begin_ ) { // we can promise next_ < seg.end_
-      if ( next_ == it->begin_ ) {
+      if ( next_ == it->begin_ && it->index_ == 0 ) {
         output_.writer().push( it->data_ );
       } else {
-        output_.writer().push( string( it->data_.data() + ( next_ - it->begin_ ), it->end_ - next_ ) );
+        output_.writer().push( string( it->data_.data() + ( next_ - it->begin_ ) + it->index_, it->end_ - next_ ) );
       }
 
       next_ = it->end_;
@@ -96,9 +97,9 @@ uint64_t Reassembler::bytes_pending() const
     return 0;
   }
 
-  uint64_t res = segs_.begin()->data_.size();
-  uint64_t end = segs_.begin()->end_;
   set<seg>::iterator it = segs_.begin();
+  uint64_t res = it->end_ - it->begin_;
+  uint64_t end = it->end_;
   ++it;
 
   while ( it != segs_.end() ) {
@@ -113,7 +114,7 @@ uint64_t Reassembler::bytes_pending() const
       } else {
         // end:   |
         // seg:      |----|
-        res += ( it->data_.size() );
+        res += ( it->end_ - it->begin_ );
       }
       end = it->end_;
       ++it;

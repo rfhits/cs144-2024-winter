@@ -49,16 +49,16 @@ public:
   {
   public:
     // string view
-    seg( uint64_t begin, string_view const& sv ) :begin_(begin){
-        data_ = string(sv);
-        end_ = begin_ + data_.size();
-    }
+    // seg( uint64_t begin, string_view const& sv ) :begin_(begin){
+    //     data_ = string(sv);
+    //     end_ = begin_ + data_.size();
+    // }
 
     // whole s is data
     seg( uint64_t begin, string&& s ) : begin_( begin )
     {
       data_ = std::move( s );
-      end_ = begin_ + s.size();
+      end_ = begin_ + data_.size();
     }
 
     // part of s is data
