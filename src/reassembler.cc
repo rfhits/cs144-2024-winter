@@ -48,7 +48,6 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
     // buf:    |-----------|
     // seg:        |------------|
     if ( next_ + avail_cap_ < first_index + data.size() ) {
-      // segs_.emplace( first_index, string_view( data.data(), avail_cap_ - ( first_index - next_ ) ) );
       segs_.emplace( std::move( data ), first_index, next_ + avail_cap_, 0 );
     } else {
       segs_.emplace( first_index, std::move( data ) );
