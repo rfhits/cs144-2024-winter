@@ -1,6 +1,11 @@
 #pragma once
 
 #include "byte_stream.hh"
+#include <list>
+#include <set>
+#include <string_view>
+using std::list;
+using std::string_view;
 
 class Reassembler
 {
@@ -40,6 +45,47 @@ public:
   // Access output stream writer, but const-only (can't write from outside)
   const Writer& writer() const { return output_.writer(); }
 
+  class seg
+  {
+  public:
+    // string view
+    seg( uint64_t begin, string_view const& sv ) :begin_(begin){
+        data_ = string(sv);
+        end_ = begin_ + data_.size();
+    }
+
+    // whole s is data
+    seg( uint64_t begin, string&& s ) : begin_( begin )
+    {
+      data_ = std::move( s );
+      end_ = begin_ + s.size();
+    }
+
+    // part of s is data
+    seg( string&& s, uint64_t begin, uint64_t end, uint64_t index ) : begin_( begin ), end_( end ), index_( index )
+    {
+      data_ = std::move( s );
+    }
+    uint64_t begin_ { 0 };
+    uint64_t end_ { 0 };
+    string data_ { "" };
+    uint64_t index_ { 0 };                   // begin from data[index]
+    bool operator<( const seg& other ) const // head first, size second
+    {
+      if ( begin_ < other.begin_ ) {
+        return true;
+      } else if ( begin_ > other.begin_ ) {
+        return false;
+      } else {
+        return end_ > other.end_;
+      }
+    }
+  };
+
 private:
   ByteStream output_; // the Reassembler writes to this ByteStream
+  std::set<seg> segs_ {};
+  uint64_t next_ { 0 };
+  uint64_t last_ { 0 };
+  bool has_last_ { false };
 };

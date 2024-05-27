@@ -5,13 +5,119 @@ using namespace std;
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
   // Your code here.
-  (void)first_index;
-  (void)data;
-  (void)is_last_substring;
+  if ( is_last_substring ) {
+    last_ = first_index + data.size();
+    has_last_ = true;
+  }
+
+  uint64_t avail_cap_ = output_.writer().available_capacity();
+
+  if ( first_index < next_ ) {
+    // buf:       |-------|
+    // data: |--|
+    if ( first_index + data.size() <= next_ ) { // already written to ByteStream, discard
+      return;
+    }
+    // cover buffer but too big, leave we need
+    // buf :      |--------|
+    // data:   |--------------|
+    else if ( data.size() + first_index >= next_ + avail_cap_ ) {
+      output_.writer().push( string( data.data() + next_ - first_index, avail_cap_ ) );
+      next_ += avail_cap_;
+      segs_.clear();
+    }
+    // buf:     |-----------|
+    // data: |--------|
+    else {
+      output_.writer().push( string( data.data() + next_ - first_index, data.size() - ( next_ - first_index ) ) );
+      next_ = first_index + data.size();
+    }
+  } else if ( first_index == next_ ) {
+    if ( data.size() <= avail_cap_ ) {
+      output_.writer().push( data );
+      next_ += data.size();
+    } else {
+      output_.writer().push( data );
+      next_ += avail_cap_;
+      segs_.clear();
+    }
+  }
+  // buf: |-------|
+  // seg:     |
+  else if ( first_index < next_ + avail_cap_ ) {
+    // buf:    |-----------|
+    // data:        |------------|
+    if ( next_ + avail_cap_ < first_index + data.size() ) {
+      segs_.emplace( first_index, string_view( data.data(), avail_cap_ - ( first_index - next_ ) ) );
+    } else {
+      segs_.emplace( first_index, data );
+    }
+  } else {
+    return;
+  }
+
+  for ( auto it = segs_.begin(); it != segs_.end(); ) {
+    // next:  |
+    // seg:        |--------|
+    if ( next_ < it->begin_ ) {
+      break;
+    }
+
+    // next:        |
+    // seg:  |---|
+    if ( next_ >= it->end_ ) {
+      it = segs_.erase( it );
+      continue;
+    }
+
+    // next:  |
+    // seg: |----|
+    if ( next_ >= it->begin_ ) { // we can promise next_ < seg.end_
+      if ( next_ == it->begin_ ) {
+        output_.writer().push( it->data_ );
+      } else {
+        output_.writer().push( string( it->data_.data() + ( next_ - it->begin_ ), it->end_ - next_ ) );
+      }
+
+      next_ = it->end_;
+      it = segs_.erase( it );
+    }
+  }
+
+  if ( has_last_ && next_ == last_ ) {
+    output_.writer().close();
+  }
 }
 
 uint64_t Reassembler::bytes_pending() const
 {
   // Your code here.
-  return {};
+  if ( segs_.empty() ) {
+    return 0;
+  }
+
+  uint64_t res = segs_.begin()->data_.size();
+  uint64_t end = segs_.begin()->end_;
+  set<seg>::iterator it = segs_.begin();
+  ++it;
+
+  while ( it != segs_.end() ) {
+    if ( it->end_ <= end ) {
+      ++it;
+      continue;
+    } else {
+      // end:   |
+      // seg: |----|
+      if ( it->begin_ <= end ) {
+        res += ( it->end_ - end );
+      } else {
+        // end:   |
+        // seg:      |----|
+        res += ( it->data_.size() );
+      }
+      end = it->end_;
+      ++it;
+    }
+  }
+  return res;
 }
