@@ -29,4 +29,7 @@ private:
   Reassembler reassembler_;
   Wrap32 isn_ { 0 };            // initial sequence number
   uint64_t max_abs_seqno { 0 }; // current recorded max absolute sequence number
+  bool is_init_ {false};
+  bool has_fin_{false};
+  bool has_rst_ {false};
 };

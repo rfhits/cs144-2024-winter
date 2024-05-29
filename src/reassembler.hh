@@ -45,6 +45,10 @@ public:
   // Access output stream writer, but const-only (can't write from outside)
   const Writer& writer() const { return output_.writer(); }
 
+  uint64_t next() const { return next_; }
+  uint64_t avail_cap() const { return output_.writer().available_capacity(); }
+  bool has_error() const {return output_.has_error();}
+  void set_error() {output_.set_error();}
   class seg
   {
   public:
@@ -85,7 +89,7 @@ public:
 private:
   ByteStream output_; // the Reassembler writes to this ByteStream
   std::set<seg> segs_ {};
-  uint64_t next_ { 0 };
+  uint64_t next_ { 0 }; // BS need to receive index
   uint64_t last_ { 0 };
   bool has_last_ { false };
 };
