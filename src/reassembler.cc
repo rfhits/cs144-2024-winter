@@ -5,6 +5,8 @@ using namespace std;
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
   // Your code here.
+
+  // there is one case: insert an empty end string, just like insert an EOF char
   if ( is_last_substring ) {
     last_ = first_index + data.size();
     has_last_ = true;

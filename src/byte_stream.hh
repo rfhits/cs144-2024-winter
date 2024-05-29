@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+using std::cerr;
 using std::string;
 class Reader;
 class Writer;
