@@ -43,6 +43,42 @@ public:
   // Access input stream reader, but const-only (can't read from outside)
   const Reader& reader() const { return input_.reader(); }
 
+  class Timer
+  {
+  public:
+    Timer( uint64_t exp_time ) : exp_time_( exp_time ), is_running_( true ) {}
+
+    uint64_t grow( uint64_t time )
+    {
+      if ( !is_running_ ) {
+        cerr << "grow a unrunned timer!" << endl;
+        return;
+      }
+      if ( cur_time_ + time < cur_time_ ) { // check for overflow
+        is_expired_ = true;
+        return;
+      }
+
+      cur_time_ += time;
+      is_expired_ = ( cur_time_ >= exp_time_ );
+    };
+
+    bool is_expired() { return is_expired; }
+
+    void reset(uint64_t exp_time) {
+        is_running_ = true;
+        is_expired_ = false;
+        exp_time_ = exp_time;
+        cur_time_ = 0;
+    }
+
+  private:
+    bool is_running_ { false };
+    bool is_expired_ { false };
+    uint64_t exp_time_ { 0 }; // expire time, should be init in constructor, in ms
+    uint64_t cur_time_ { 0 };
+  };
+
 private:
   // Variables initialized in constructor
   ByteStream input_;
