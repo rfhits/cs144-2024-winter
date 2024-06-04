@@ -26,10 +26,10 @@ void TCPSender::push( const TransmitFunction& transmit )
   auto remain_wnd_size = wnd_size_ == 0 ? 1 : wnd_size_;
 
   auto data = input_.reader().peek();
-  decltype( data.size() ) remain_data_size = ( abs_last_ackno_ == 0 ) + data.size() + has_fin_; // a FIN at end
 
   bool has_SYN_sent = false;
-  uint64_t send_index = 0; // should send from input_[index]
+  uint64_t send_index = abs_last_ackno_ == 0 ? 0 : abs_last_ackno_ - 1; // should send from input_[index]
+  // decltype( data.size() ) remain_data_size = ( abs_last_ackno_ == 0 ) + data.size() - send_index + !has_fin_;
 
   while ( remain_data_size > 0 && remain_wnd_size > 0 ) {
     TCPSenderMessage cur_msg;
@@ -60,7 +60,7 @@ void TCPSender::push( const TransmitFunction& transmit )
       }
       // have data to send
       else {
-        // should FIN took a seqno?
+        // can we reach FIN so that FIN took a seqno?
         bool set_FIN
           = ( ( remain_data_size - 1 ) <= TCPConfig::MAX_PAYLOAD_SIZE ) && ( remain_data_size <= remain_wnd_size );
         uint64_t payload_len
@@ -107,14 +107,13 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
     return;
   }
 
-  if (timer_.abs_exp_ackno_ <= abs_last_ackno_) {
-    timer_.turnoff();
-    return;
-  }
+  if ( wnd_size_ != 0 ) {
+    // transmit(timer_.retx_msg_);
+    if ( ost_segs_.size() ) {
+      transmit( gen_msg( ost_segs_.begin()->first, ost_segs_.begin()->second ) );
+    }
 
-  if (wnd_size_ != 0) {
-    transmit(timer_.retx_msg_);
-    if (!is_con_retx_) {
+    if ( !is_con_retx_ ) {
       retx_cnt_ = 1;
     } else {
       retx_cnt_ += 1;
@@ -122,5 +121,5 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
     cur_RTO_ms_ *= 2;
   }
 
-  timer_.restart(cur_RTO_ms_);
+  timer_.restart( cur_RTO_ms_ );
 }

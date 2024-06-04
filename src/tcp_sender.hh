@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <queue>
@@ -46,9 +47,8 @@ public:
   class Timer
   {
   public:
-    Timer( uint64_t exp_time, uint64_t abs_exp_ackno )
-      : exp_time_( exp_time ), is_running_( true ), abs_exp_ackno_( abs_exp_ackno )
-    {}
+    Timer() {}
+    Timer( uint64_t exp_time, uint64_t abs_exp_ackno ) : exp_time_( exp_time ), is_running_( true ) {}
 
     uint64_t grow( uint64_t time )
     {
@@ -67,17 +67,18 @@ public:
 
     bool is_expired() { return is_expired; }
 
-    void reset( uint64_t exp_time, uint64_t abs_exp_ackno, TCPSenderMessage msg )
+    void reset( uint64_t exp_time )
     {
       is_running_ = true;
       is_expired_ = false;
       exp_time_ = exp_time;
-      abs_exp_ackno_ = abs_exp_ackno;
+      // abs_exp_ackno_ = abs_exp_ackno;
       cur_time_ = 0;
-      retx_msg_ = msg;
+      // retx_msg_ = msg;
     }
 
-    void restart(uint64_t exp_time) {
+    void restart( uint64_t exp_time )
+    {
       exp_time_ = exp_time;
       cur_time_ = 0;
     }
@@ -86,11 +87,35 @@ public:
 
     bool is_running_ { false };
     bool is_expired_ { false };
-    uint64_t abs_exp_ackno_ { 0 }; // after expire, hope ack has been acknowledged
-    uint64_t exp_time_ { 0 };      // expire time, should be init in constructor, in ms
+    // uint64_t abs_exp_ackno_ { 0 }; // after expire, hope ack has been acknowledged
+    uint64_t exp_time_ { 0 }; // expire time, should be init in constructor, in ms
     uint64_t cur_time_ { 0 };
-    TCPSenderMessage retx_msg_ {};
   };
+
+private:
+  // generate a message from [SYN, input_, FIN]
+  TCPSenderMessage gen_msg( uint64_t seq_no, uint64_t len )
+  {
+    TCPSenderMessage msg;
+    uint64_t payload_len = len;
+    uint64_t payload_index = seq_no - 1;
+    if ( seq_no == 0 ) {
+      msg.SYN = true;
+      payload_len -= 1;
+      payload_index = 0;
+    }
+    auto data = input_.reader().peek();
+    // no FIN
+    if ( payload_len + payload_index <= data.size() ) {
+      msg.payload = data.substr( payload_index, payload_len );
+    } else if ( payload_len + payload_index == data.size() + 1 ) {
+      msg.payload = data.substr( payload_index );
+      msg.FIN = true;
+    } else {
+      std::cerr << "gen_msg() out of input_ boundary" << endl;
+    }
+    return msg;
+  }
 
 private:
   // Variables initialized in constructor
@@ -103,10 +128,11 @@ private:
   uint64_t abs_exp_ackno_ { 0 };
   uint64_t has_fin_ { false };
 
-  uint retx_cnt_ { 0 }; // retransmit count
+  uint retx_cnt_ { 0 };        // retransmit count
   bool is_con_retx_ { false }; // consecutive retransmit
 
   Timer timer_;
 
   uint64_t wnd_size_ { 1 };
+  std::map<uint64_t, uint64_t> ost_segs_; // outstanding segments, <seqno, seg_len>
 };
