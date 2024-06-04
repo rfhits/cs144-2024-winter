@@ -6,6 +6,7 @@
 #include <string_view>
 
 using std::cerr;
+using std::endl;
 using std::string;
 class Reader;
 class Writer;

@@ -16,7 +16,7 @@ class TCPSender
 public:
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
   TCPSender( ByteStream&& input, Wrap32 isn, uint64_t initial_RTO_ms )
-    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms )
+    : input_( std::move( input ) ), isn_( isn ), initial_RTO_ms_( initial_RTO_ms ), cur_RTO_ms_( initial_RTO_ms )
   {}
 
   /* Generate an empty TCPSenderMessage */
@@ -46,12 +46,14 @@ public:
   class Timer
   {
   public:
-    Timer( uint64_t exp_time ) : exp_time_( exp_time ), is_running_( true ) {}
+    Timer( uint64_t exp_time, uint64_t abs_exp_ackno )
+      : exp_time_( exp_time ), is_running_( true ), abs_exp_ackno_( abs_exp_ackno )
+    {}
 
     uint64_t grow( uint64_t time )
     {
       if ( !is_running_ ) {
-        cerr << "grow a unrunned timer!" << endl;
+        cerr << "grow a un-run timer!" << endl;
         return;
       }
       if ( cur_time_ + time < cur_time_ ) { // check for overflow
@@ -65,18 +67,29 @@ public:
 
     bool is_expired() { return is_expired; }
 
-    void reset(uint64_t exp_time) {
-        is_running_ = true;
-        is_expired_ = false;
-        exp_time_ = exp_time;
-        cur_time_ = 0;
+    void reset( uint64_t exp_time, uint64_t abs_exp_ackno, TCPSenderMessage msg )
+    {
+      is_running_ = true;
+      is_expired_ = false;
+      exp_time_ = exp_time;
+      abs_exp_ackno_ = abs_exp_ackno;
+      cur_time_ = 0;
+      retx_msg_ = msg;
     }
 
-  private:
+    void restart(uint64_t exp_time) {
+      exp_time_ = exp_time;
+      cur_time_ = 0;
+    }
+
+    void turnoff() { is_running_ = false; }
+
     bool is_running_ { false };
     bool is_expired_ { false };
-    uint64_t exp_time_ { 0 }; // expire time, should be init in constructor, in ms
+    uint64_t abs_exp_ackno_ { 0 }; // after expire, hope ack has been acknowledged
+    uint64_t exp_time_ { 0 };      // expire time, should be init in constructor, in ms
     uint64_t cur_time_ { 0 };
+    TCPSenderMessage retx_msg_ {};
   };
 
 private:
@@ -84,4 +97,16 @@ private:
   ByteStream input_;
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
+  uint64_t cur_RTO_ms_;
+
+  uint64_t abs_last_ackno_ { 0 }; // receiver: please send me the first byte, equals 0 if NOT ack SYN
+  uint64_t abs_exp_ackno_ { 0 };
+  uint64_t has_fin_ { false };
+
+  uint retx_cnt_ { 0 }; // retransmit count
+  bool is_con_retx_ { false }; // consecutive retransmit
+
+  Timer timer_;
+
+  uint64_t wnd_size_ { 1 };
 };
