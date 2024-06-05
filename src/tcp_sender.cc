@@ -18,21 +18,26 @@ uint64_t TCPSender::consecutive_retransmissions() const
 void TCPSender::push( const TransmitFunction& transmit )
 {
   // Your code here.
-  if ( has_fin_ ) {
+  if ( is_FIN_acked ) {
     cerr << "I don't know how to deal with that" << endl;
     return;
   }
 
+  // [last_ackno, last_ackno + wnd_size)
+  // send outstanding segments overlap with the interval
+
   auto remain_wnd_size = wnd_size_ == 0 ? 1 : wnd_size_;
 
-  auto data = input_.reader().peek();
-
   bool has_SYN_sent = false;
-  uint64_t send_index = abs_last_ackno_ == 0 ? 0 : abs_last_ackno_ - 1; // should send from input_[index]
-  // decltype( data.size() ) remain_data_size = ( abs_last_ackno_ == 0 ) + data.size() - send_index + !has_fin_;
+
+  bool is_input_finished = input_.writer().is_closed();
+  uint64_t remain_data_size = ( abs_last_ackno_ == 0 ) + input_.reader().bytes_buffered() + is_input_finished;
+
+  uint64_t abs_cur_seqno = abs_last_ackno_; // send from this seqno, change in while loop
 
   while ( remain_data_size > 0 && remain_wnd_size > 0 ) {
     TCPSenderMessage cur_msg;
+    cur_msg.seqno = Wrap32::wrap( abs_cur_seqno, isn_ );
 
     if ( abs_last_ackno_ == 0 && !has_SYN_sent ) {
       cur_msg.SYN = true;
@@ -40,8 +45,6 @@ void TCPSender::push( const TransmitFunction& transmit )
       remain_data_size -= 1;
       remain_wnd_size -= 1;
       has_SYN_sent = true;
-    } else {
-      cur_msg.seqno = Wrap32::wrap( abs_last_ackno_ + send_index, isn_ );
     }
 
     // put into payload
@@ -52,32 +55,28 @@ void TCPSender::push( const TransmitFunction& transmit )
     }
     // we have window size
     else {
-      // empty data, no need for payload
-      if ( remain_data_size == 1 ) {
-        cur_msg.FIN = true;
-        remain_data_size -= 1;
-        remain_wnd_size -= 1;
-      }
-      // have data to send
-      else {
-        // can we reach FIN so that FIN took a seqno?
-        bool set_FIN
-          = ( ( remain_data_size - 1 ) <= TCPConfig::MAX_PAYLOAD_SIZE ) && ( remain_data_size <= remain_wnd_size );
-        uint64_t payload_len
-          = std::min( { remain_data_size - 1, TCPConfig::MAX_PAYLOAD_SIZE, remain_wnd_size - set_FIN } );
+      // extract min(Max_Payload_Size, wnd_size) from bs
+      auto bytes_buffered = input_.reader().bytes_buffered();
 
-        cur_msg.payload = data.substr( send_index, payload_len );
-        remain_data_size -= ( payload_len + set_FIN );
-        send_index += payload_len;
-        remain_wnd_size -= ( payload_len + set_FIN );
-        cur_msg.FIN = set_FIN;
+      read( input_.reader(),
+            std::min( { bytes_buffered, remain_wnd_size, TCPConfig::MAX_PAYLOAD_SIZE } ),
+            cur_msg.payload );
+      remain_wnd_size -= cur_msg.payload.size();
+      remain_data_size -= cur_msg.payload.size();
+
+      if ( remain_wnd_size > 0 && input_.reader().is_finished() && is_input_finished ) {
+        remain_wnd_size -= 1;
+        cur_msg.FIN = true;
+        remain_data_size = 0;
       }
     }
 
-    abs_exp_ackno_ += cur_msg.sequence_length();
     transmit( cur_msg );
+    ost_segs_.insert( { abs_cur_seqno, cur_msg } );
+    abs_exp_ackno_ += cur_msg.sequence_length();
+    abs_cur_seqno += cur_msg.sequence_length();
     if ( !timer_.is_running_ ) {
-      timer_.reset( cur_RTO_ms_, abs_exp_ackno_, cur_msg );
+      timer_.reset( cur_RTO_ms_ );
     }
     cur_msg.reset();
   }

@@ -37,7 +37,7 @@ struct TCPSenderMessage
 
   void reset()
   {
-    SYN = RST = false;
+    SYN = RST = RST = false;
     payload.clear();
     return;
   }

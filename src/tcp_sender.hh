@@ -4,6 +4,7 @@
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
 
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <list>
@@ -44,9 +45,8 @@ public:
   // Access input stream reader, but const-only (can't read from outside)
   const Reader& reader() const { return input_.reader(); }
 
-  class Timer
+  struct Timer
   {
-  public:
     Timer() {}
     Timer( uint64_t exp_time, uint64_t abs_exp_ackno ) : exp_time_( exp_time ), is_running_( true ) {}
 
@@ -72,9 +72,7 @@ public:
       is_running_ = true;
       is_expired_ = false;
       exp_time_ = exp_time;
-      // abs_exp_ackno_ = abs_exp_ackno;
       cur_time_ = 0;
-      // retx_msg_ = msg;
     }
 
     void restart( uint64_t exp_time )
@@ -94,7 +92,7 @@ public:
 
 private:
   // generate a message from [SYN, input_, FIN]
-  TCPSenderMessage gen_msg( uint64_t seq_no, uint64_t len )
+  TCPSenderMessage gen_msg( uint64_t seq_no, uint64_t len ) const
   {
     TCPSenderMessage msg;
     uint64_t payload_len = len;
@@ -124,9 +122,11 @@ private:
   uint64_t initial_RTO_ms_;
   uint64_t cur_RTO_ms_;
 
-  uint64_t abs_last_ackno_ { 0 }; // receiver: please send me the first byte, equals 0 if NOT ack SYN
-  uint64_t abs_exp_ackno_ { 0 };
-  uint64_t has_fin_ { false };
+  // receiver: please send me the first byte, equals 0 if NOT ack SYN, promise aligned with ost_segs_
+  uint64_t abs_last_ackno_ { 0 };
+
+  uint64_t abs_exp_ackno_ { 0 }; // before this seqno are sent
+  uint64_t is_FIN_acked { false };
 
   uint retx_cnt_ { 0 };        // retransmit count
   bool is_con_retx_ { false }; // consecutive retransmit
@@ -134,5 +134,84 @@ private:
   Timer timer_;
 
   uint64_t wnd_size_ { 1 };
-  std::map<uint64_t, uint64_t> ost_segs_; // outstanding segments, <seqno, seg_len>
+  std::map<uint64_t, TCPSenderMessage> ost_segs_; // outstanding segments, <seqno, msg>
+};
+
+// ByteStream with SYN, FIN: [ SYN, ByteStream, FIN ]
+// SYN with absolute seqno 0
+class WrappedByteStreamTool
+{
+
+public:
+  // calculate how many bytes in a ByteStream haven't be sent
+  // promise FIN haven't be sent
+  static void count_pending_bytes( const ByteStream& bs, uint64_t& cnt, bool& has_fin )
+  {
+    has_fin = bs.writer().is_closed();
+    cnt = has_fin + bs.reader().bytes_buffered();
+    return;
+    uint64_t abs_seqno = 0;
+
+    if ( abs_seqno == 0 ) {
+      cnt += 1;
+      if ( bs.reader().bytes_popped() > 0 ) {
+        cerr << "try to count total length of a popped ByteStream" << endl;
+        // return;
+      }
+      cnt += bs.reader().bytes_buffered() + bs.reader().bytes_popped() + has_fin;
+      return;
+    }
+
+    uint64_t send_index = abs_seqno - 1;
+    if ( send_index < bs.reader().bytes_popped() ) {
+      cerr << "try to count bytes pending in popped segment of ByteStream" << endl;
+    }
+    if ( send_index > bs.reader().bytes_buffered() + bs.reader().bytes_popped() ) {
+      cerr << "error: abs_seqno out of FIN index!" << endl;
+      return;
+    } else if ( bs.reader().bytes_buffered() + bs.reader().bytes_popped() == send_index ) {
+      if ( !has_fin ) {
+        cerr << "error: abs_seqno point to a un-appeared byte" << endl;
+        return;
+      } else {
+        cnt = 1;
+        return;
+      }
+    } else {
+      cnt = bs.reader().bytes_buffered() + bs.reader().bytes_popped() - send_index;
+      cnt += has_fin;
+      return;
+    }
+  }
+
+  void view_bytes( const ByteStream& bs,
+                   uint64_t abs_seqno,
+                   uint64_t len,
+                   string& s,
+                   bool& contains_SYN,
+                   bool& contains_FIN )
+  {
+    uint64_t send_idx;
+    uint64_t str_len = len; // extract from bs.string
+    if ( abs_seqno == 0 ) {
+      contains_SYN = true;
+      str_len -= 1;
+      send_idx = 0;
+    } else {
+      contains_SYN = false;
+      send_idx = abs_seqno - 1;
+    }
+
+    if ( bs.writer().is_closed() ) {
+      if ( send_idx < bs.reader().bytes_popped() ) {
+        cerr << "error: abs_seq in ByteStream's popped bytes" << endl;
+        return;
+      }
+      uint64_t rel_send_idx = send_idx - bs.reader().bytes_popped();
+      if ( rel_send_idx + str_len <= bs.reader().bytes_buffered() ) {
+        s = bs.reader().peek();
+      }
+    } else {
+    }
+  }
 };
