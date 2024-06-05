@@ -109,7 +109,11 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
   if ( wnd_size_ != 0 ) {
     // transmit(timer_.retx_msg_);
     if ( ost_segs_.size() ) {
-      transmit( gen_msg( ost_segs_.begin()->first, ost_segs_.begin()->second ) );
+      if ( ost_segs_.find( abs_last_ackno_ ) != ost_segs_.end() ) {
+        transmit( ost_segs_.find( abs_last_ackno_ )->second );
+      } else {
+        cerr << "tick can't find lack ackno corresponding message" << endl;
+      }
     }
 
     if ( !is_con_retx_ ) {
@@ -120,5 +124,5 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
     cur_RTO_ms_ *= 2;
   }
 
-  timer_.restart( cur_RTO_ms_ );
+  timer_.reset( cur_RTO_ms_ );
 }

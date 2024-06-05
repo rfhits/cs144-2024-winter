@@ -75,11 +75,6 @@ public:
       cur_time_ = 0;
     }
 
-    void restart( uint64_t exp_time )
-    {
-      exp_time_ = exp_time;
-      cur_time_ = 0;
-    }
 
     void turnoff() { is_running_ = false; }
 
