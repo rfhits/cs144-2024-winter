@@ -6,13 +6,13 @@ using namespace std;
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
   // Your code here.
-  return {};
+  return abs_exp_ackno_ - abs_last_ackno_;
 }
 
 uint64_t TCPSender::consecutive_retransmissions() const
 {
   // Your code here.
-  return {};
+  return retx_cnt_;
 }
 
 void TCPSender::push( const TransmitFunction& transmit )
@@ -68,6 +68,7 @@ void TCPSender::push( const TransmitFunction& transmit )
         remain_wnd_size -= 1;
         cur_msg.FIN = true;
         remain_data_size = 0;
+        has_FIN_sent_ = true;
       }
     }
 
@@ -84,14 +85,45 @@ void TCPSender::push( const TransmitFunction& transmit )
 
 TCPSenderMessage TCPSender::make_empty_message() const
 {
-  // Your code here.
-  return {};
+  TCPSenderMessage msg;
+  msg.seqno = Wrap32::wrap( abs_exp_ackno_, isn_ );
+  return msg;
+  ;
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   // Your code here.
   (void)msg;
+  if ( msg.RST ) {
+    input_.set_error();
+    return;
+  }
+
+  uint64_t abs_rcv_ackno = 0;
+
+  if ( msg.ackno == nullopt ) {
+    abs_last_ackno_ = 0;
+    abs_rcv_ackno = 0;
+    ost_segs_.clear();
+  } else {
+    abs_rcv_ackno = msg.ackno.value().unwrap( isn_, abs_last_ackno_ );
+  }
+
+  is_FIN_acked = has_FIN_sent_ & ( abs_rcv_ackno == abs_exp_ackno_ );
+
+  auto it = ost_segs_.begin();
+  while ( it != ost_segs_.end() ) {
+    if ( it->first + it->second.sequence_length() <= abs_rcv_ackno ) {
+      it = ost_segs_.erase( it );
+    } else {
+      abs_last_ackno_ = it->first;
+
+      // right bound same: last_ackno + wnd_size == rcv_ackno + msg.window_size
+      wnd_size_ = abs_rcv_ackno + msg.window_size - abs_last_ackno_;
+      break;
+    }
+  }
 }
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )

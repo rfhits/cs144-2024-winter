@@ -26,11 +26,11 @@ struct TCPSenderMessage
 {
   Wrap32 seqno { 0 };
 
-  bool SYN {};
+  bool SYN {false};
   std::string payload {};
-  bool FIN {};
+  bool FIN {false};
 
-  bool RST {};
+  bool RST {false};
 
   // How many sequence numbers does this segment use?
   size_t sequence_length() const { return SYN + payload.size() + FIN; }

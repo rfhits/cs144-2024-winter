@@ -75,7 +75,6 @@ public:
       cur_time_ = 0;
     }
 
-
     void turnoff() { is_running_ = false; }
 
     bool is_running_ { false };
@@ -121,6 +120,7 @@ private:
   uint64_t abs_last_ackno_ { 0 };
 
   uint64_t abs_exp_ackno_ { 0 }; // before this seqno are sent
+  bool has_FIN_sent_ { false };
   uint64_t is_FIN_acked { false };
 
   uint retx_cnt_ { 0 };        // retransmit count
