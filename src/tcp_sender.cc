@@ -30,27 +30,12 @@ void TCPSender::push( const TransmitFunction& transmit )
 
   uint64_t abs_cur_seqno = abs_last_ackno_; // send from this seqno, change in while loop
 
-  // [last_ackno, last_ackno + wnd_size)
-  // send outstanding segments overlap with the interval
-  if ( abs_last_ackno_ < abs_exp_ackno_ ) {
-    auto it = ost_segs_.begin();
-    while ( it != ost_segs_.end() && remain_wnd_size > 0 ) {
-      if ( it->first + it->second.sequence_length() > abs_last_ackno_ ) {
-        transmit( it->second );
-        has_SYN_sent = true;
-        if ( !timer_.is_running_ ) {
-          timer_.reset( cur_RTO_ms_ );
-        }
-        uint64_t useful_len_in_seg = it->first + it->second.sequence_length() - abs_last_ackno_;
-        remain_wnd_size = ( useful_len_in_seg >= remain_wnd_size ) ? 0 : remain_wnd_size - useful_len_in_seg;
-        abs_cur_seqno = it->first + it->second.sequence_length();
-        it++;
-      } else {
-        cerr << "error: exist seg in ost_seg be acked" << endl;
-        it++;
-      }
-    }
+  if ( abs_last_ackno_ + remain_wnd_size <= abs_exp_ackno_ ) {
+    return;
   }
+  abs_cur_seqno = abs_exp_ackno_;
+  remain_wnd_size = abs_last_ackno_ + remain_wnd_size - abs_exp_ackno_;
+
   if ( remain_wnd_size == 0 ) {
     return;
   }
@@ -85,6 +70,8 @@ void TCPSender::push( const TransmitFunction& transmit )
       read( input_.reader(),
             std::min( { bytes_buffered, remain_wnd_size, TCPConfig::MAX_PAYLOAD_SIZE } ),
             cur_msg.payload );
+      // std::cout << "remain window size:" << remain_wnd_size << std::endl;
+      // std::cout << "payload:" << cur_msg.payload << std::endl;
       remain_wnd_size -= cur_msg.payload.size();
       remain_data_size -= cur_msg.payload.size();
 
@@ -95,6 +82,8 @@ void TCPSender::push( const TransmitFunction& transmit )
         has_FIN_sent_ = true;
       }
     }
+
+    cur_msg.RST = input_.has_error();
 
     transmit( cur_msg );
     ost_segs_.insert( { abs_cur_seqno, cur_msg } );
@@ -111,6 +100,7 @@ TCPSenderMessage TCPSender::make_empty_message() const
 {
   TCPSenderMessage msg;
   msg.seqno = Wrap32::wrap( abs_exp_ackno_, isn_ );
+  msg.RST = input_.has_error();
   return msg;
 }
 
@@ -125,41 +115,51 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   uint64_t abs_rcv_ackno = 0;
 
   if ( !msg.ackno.has_value() ) {
-    abs_last_ackno_ = 0;
+    abs_last_ackno_ = abs_exp_ackno_ = 0;
     abs_rcv_ackno = 0;
+    wnd_size_ = msg.window_size;
     ost_segs_.clear();
   } else {
     abs_rcv_ackno = msg.ackno.value().unwrap( isn_, abs_last_ackno_ );
   }
 
-  is_FIN_acked = has_FIN_sent_ & ( abs_rcv_ackno == abs_exp_ackno_ );
-
-  if ( abs_rcv_ackno <= abs_last_ackno_ ) {
+  // ignore impossible ack
+  if ( abs_rcv_ackno > abs_exp_ackno_ ) {
     return;
-  } else { // new segment get acked
+  }
+
+  // rcv_ackno + ack_wnd = last_ackno + wnd
+  // wnd = rcv_ackno + ack_wnd - last_ackno
+  is_FIN_acked = has_FIN_sent_ & ( abs_rcv_ackno == abs_exp_ackno_ );
+  bool has_new_data_acked = abs_rcv_ackno > abs_last_ackno_;
+  //
+  if ( abs_rcv_ackno <= abs_last_ackno_ ) {
+    wnd_size_ = ( abs_rcv_ackno + msg.window_size > abs_last_ackno_ )
+                  ? abs_rcv_ackno + msg.window_size - abs_last_ackno_
+                  : 0;
+  } else // if (abs_rcv_ackno > abs_last_ackno_) // new segment get acked
+  {
     cur_RTO_ms_ = initial_RTO_ms_;
     retx_cnt_ = 0;
     is_con_retx_ = false;
-  }
-
-  auto it = ost_segs_.begin();
-  while ( it != ost_segs_.end() ) {
-    if ( it->first + it->second.sequence_length() <= abs_rcv_ackno ) {
-      it = ost_segs_.erase( it );
-    } else {
-      // TODO: if aligned, sequence in flight is not accurate
-      abs_last_ackno_ = it->first;
-
-      // right bound same: last_ackno + wnd_size == rcv_ackno + msg.window_size
-      wnd_size_ = abs_rcv_ackno + msg.window_size - abs_last_ackno_;
-      break;
+    abs_last_ackno_ = abs_rcv_ackno;
+    wnd_size_ = msg.window_size;
+    auto it = ost_segs_.begin();
+    while ( it != ost_segs_.end() ) {
+      if ( it->first + it->second.sequence_length() <= abs_rcv_ackno ) {
+        it = ost_segs_.erase( it );
+      } else {
+        break;
+      }
     }
   }
 
   if ( ost_segs_.empty() ) {
     timer_.turnoff();
   } else {
-    timer_.reset( cur_RTO_ms_ );
+    if ( has_new_data_acked ) {
+      timer_.reset( cur_RTO_ms_ );
+    }
   }
 }
 
@@ -180,17 +180,21 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
   // expire with nothing in flight should not happen, because timer_ is already turnoff in receive()
   if ( ost_segs_.empty() ) {
     cerr << "timer_ is already off in tick() if receive() get all segments acknowledged" << endl;
-    assert( abs_last_ackno_ == abs_exp_ackno_ );
+    if ( ( abs_last_ackno_ != abs_exp_ackno_ ) ) {
+      cerr << "error: abs_last_ackno_ != abs_exp_ackno_" << endl;
+      std::cout << "abs_last_ackno_:" << abs_last_ackno_ << std::endl;
+      std::cout << "abs_exp_ackno_:" << abs_exp_ackno_ << std::endl;
+    }
     timer_.turnoff();
     return;
   }
 
-  assert( ost_segs_.begin()->first == abs_last_ackno_ ); // ackno is aligned with outstanding segment
   transmit( ost_segs_.begin()->second );
 
   if ( wnd_size_ != 0 ) {
     if ( !is_con_retx_ ) {
       retx_cnt_ = 1;
+      is_con_retx_ = true;
     } else {
       retx_cnt_ += 1;
     }
