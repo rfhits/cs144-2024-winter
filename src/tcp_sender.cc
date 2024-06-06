@@ -94,7 +94,6 @@ TCPSenderMessage TCPSender::make_empty_message() const
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   // Your code here.
-  (void)msg;
   if ( msg.RST ) {
     input_.set_error();
     return;
@@ -112,6 +111,14 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
   is_FIN_acked = has_FIN_sent_ & ( abs_rcv_ackno == abs_exp_ackno_ );
 
+  if ( abs_rcv_ackno <= abs_last_ackno_ ) {
+    return;
+  } else {
+    cur_RTO_ms_ = initial_RTO_ms_;
+    retx_cnt_ = 0;
+    is_con_retx_ = false;
+  }
+
   auto it = ost_segs_.begin();
   while ( it != ost_segs_.end() ) {
     if ( it->first + it->second.sequence_length() <= abs_rcv_ackno ) {
@@ -123,6 +130,12 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
       wnd_size_ = abs_rcv_ackno + msg.window_size - abs_last_ackno_;
       break;
     }
+  }
+
+  if ( ost_segs_.empty() ) {
+    timer_.turnoff();
+  } else {
+    timer_.reset( cur_RTO_ms_ );
   }
 }
 
@@ -138,16 +151,20 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
     return;
   }
 
-  if ( wnd_size_ != 0 ) {
-    // transmit(timer_.retx_msg_);
-    if ( ost_segs_.size() ) {
-      if ( ost_segs_.find( abs_last_ackno_ ) != ost_segs_.end() ) {
-        transmit( ost_segs_.find( abs_last_ackno_ )->second );
-      } else {
-        cerr << "tick can't find lack ackno corresponding message" << endl;
-      }
-    }
+  // now timer is expired, let's check
 
+  // expire with nothing in flight should not happen, because timer_ is already turnoff in receive()
+  if ( ost_segs_.empty() ) {
+    cerr << "timer_ is already off in tick() if receive() get all segments acknowledged" << endl;
+    assert( abs_last_ackno_ == abs_exp_ackno_ );
+    timer_.turnoff();
+    return;
+  }
+
+  assert( ost_segs_.begin()->first == abs_last_ackno_ ); // ackno is aligned with outstanding segment
+  transmit( ost_segs_.begin()->second );
+
+  if ( wnd_size_ != 0 ) {
     if ( !is_con_retx_ ) {
       retx_cnt_ = 1;
     } else {
@@ -155,6 +172,5 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
     }
     cur_RTO_ms_ *= 2;
   }
-
   timer_.reset( cur_RTO_ms_ );
 }

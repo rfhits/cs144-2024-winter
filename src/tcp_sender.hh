@@ -85,31 +85,6 @@ public:
   };
 
 private:
-  // generate a message from [SYN, input_, FIN]
-  TCPSenderMessage gen_msg( uint64_t seq_no, uint64_t len ) const
-  {
-    TCPSenderMessage msg;
-    uint64_t payload_len = len;
-    uint64_t payload_index = seq_no - 1;
-    if ( seq_no == 0 ) {
-      msg.SYN = true;
-      payload_len -= 1;
-      payload_index = 0;
-    }
-    auto data = input_.reader().peek();
-    // no FIN
-    if ( payload_len + payload_index <= data.size() ) {
-      msg.payload = data.substr( payload_index, payload_len );
-    } else if ( payload_len + payload_index == data.size() + 1 ) {
-      msg.payload = data.substr( payload_index );
-      msg.FIN = true;
-    } else {
-      std::cerr << "gen_msg() out of input_ boundary" << endl;
-    }
-    return msg;
-  }
-
-private:
   // Variables initialized in constructor
   ByteStream input_;
   Wrap32 isn_;
@@ -130,83 +105,4 @@ private:
 
   uint64_t wnd_size_ { 1 };
   std::map<uint64_t, TCPSenderMessage> ost_segs_; // outstanding segments, <seqno, msg>
-};
-
-// ByteStream with SYN, FIN: [ SYN, ByteStream, FIN ]
-// SYN with absolute seqno 0
-class WrappedByteStreamTool
-{
-
-public:
-  // calculate how many bytes in a ByteStream haven't be sent
-  // promise FIN haven't be sent
-  static void count_pending_bytes( const ByteStream& bs, uint64_t& cnt, bool& has_fin )
-  {
-    has_fin = bs.writer().is_closed();
-    cnt = has_fin + bs.reader().bytes_buffered();
-    return;
-    uint64_t abs_seqno = 0;
-
-    if ( abs_seqno == 0 ) {
-      cnt += 1;
-      if ( bs.reader().bytes_popped() > 0 ) {
-        cerr << "try to count total length of a popped ByteStream" << endl;
-        // return;
-      }
-      cnt += bs.reader().bytes_buffered() + bs.reader().bytes_popped() + has_fin;
-      return;
-    }
-
-    uint64_t send_index = abs_seqno - 1;
-    if ( send_index < bs.reader().bytes_popped() ) {
-      cerr << "try to count bytes pending in popped segment of ByteStream" << endl;
-    }
-    if ( send_index > bs.reader().bytes_buffered() + bs.reader().bytes_popped() ) {
-      cerr << "error: abs_seqno out of FIN index!" << endl;
-      return;
-    } else if ( bs.reader().bytes_buffered() + bs.reader().bytes_popped() == send_index ) {
-      if ( !has_fin ) {
-        cerr << "error: abs_seqno point to a un-appeared byte" << endl;
-        return;
-      } else {
-        cnt = 1;
-        return;
-      }
-    } else {
-      cnt = bs.reader().bytes_buffered() + bs.reader().bytes_popped() - send_index;
-      cnt += has_fin;
-      return;
-    }
-  }
-
-  void view_bytes( const ByteStream& bs,
-                   uint64_t abs_seqno,
-                   uint64_t len,
-                   string& s,
-                   bool& contains_SYN,
-                   bool& contains_FIN )
-  {
-    uint64_t send_idx;
-    uint64_t str_len = len; // extract from bs.string
-    if ( abs_seqno == 0 ) {
-      contains_SYN = true;
-      str_len -= 1;
-      send_idx = 0;
-    } else {
-      contains_SYN = false;
-      send_idx = abs_seqno - 1;
-    }
-
-    if ( bs.writer().is_closed() ) {
-      if ( send_idx < bs.reader().bytes_popped() ) {
-        cerr << "error: abs_seq in ByteStream's popped bytes" << endl;
-        return;
-      }
-      uint64_t rel_send_idx = send_idx - bs.reader().bytes_popped();
-      if ( rel_send_idx + str_len <= bs.reader().bytes_buffered() ) {
-        s = bs.reader().peek();
-      }
-    } else {
-    }
-  }
 };
