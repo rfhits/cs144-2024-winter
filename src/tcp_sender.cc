@@ -19,8 +19,6 @@ void TCPSender::push( const TransmitFunction& transmit )
 {
   // Your code here.
   if ( is_FIN_acked ) {
-    cerr << "FIN is acked, sender shouldn't send data" << endl;
-    cerr << "I don't know how to deal with that" << endl;
     return;
   }
 
@@ -28,12 +26,11 @@ void TCPSender::push( const TransmitFunction& transmit )
 
   bool has_SYN_sent = false;
 
-  uint64_t abs_cur_seqno = abs_last_ackno_; // send from this seqno, change in while loop
-
   if ( abs_last_ackno_ + remain_wnd_size <= abs_exp_ackno_ ) {
     return;
   }
-  abs_cur_seqno = abs_exp_ackno_;
+
+  auto abs_cur_seqno = abs_exp_ackno_; // send from this seqno, change in while loop
   remain_wnd_size = abs_last_ackno_ + remain_wnd_size - abs_exp_ackno_;
 
   if ( remain_wnd_size == 0 ) {
@@ -57,7 +54,6 @@ void TCPSender::push( const TransmitFunction& transmit )
     }
 
     // put into payload
-
     // u can't put payload and FIN into message
     if ( remain_wnd_size == 0 ) {
       // pass
