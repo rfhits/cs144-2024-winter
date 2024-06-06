@@ -56,7 +56,8 @@ void TCPSender::push( const TransmitFunction& transmit )
   }
 
   bool is_input_finished = input_.writer().is_closed();
-  uint64_t remain_data_size = ( !has_SYN_sent & abs_cur_seqno == 0 ) + input_.reader().bytes_buffered() + ( is_input_finished & !has_FIN_sent_);
+  uint64_t remain_data_size = ( !has_SYN_sent & ( abs_cur_seqno == 0 ) ) + input_.reader().bytes_buffered()
+                              + ( is_input_finished & !has_FIN_sent_ );
 
   while ( remain_data_size > 0 && remain_wnd_size > 0 ) {
     TCPSenderMessage cur_msg;
@@ -111,7 +112,6 @@ TCPSenderMessage TCPSender::make_empty_message() const
   TCPSenderMessage msg;
   msg.seqno = Wrap32::wrap( abs_exp_ackno_, isn_ );
   return msg;
-  ;
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
@@ -147,6 +147,7 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
     if ( it->first + it->second.sequence_length() <= abs_rcv_ackno ) {
       it = ost_segs_.erase( it );
     } else {
+      // TODO: if aligned, sequence in flight is not accurate
       abs_last_ackno_ = it->first;
 
       // right bound same: last_ackno + wnd_size == rcv_ackno + msg.window_size

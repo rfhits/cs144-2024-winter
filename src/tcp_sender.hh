@@ -48,9 +48,9 @@ public:
   struct Timer
   {
     Timer() {}
-    Timer( uint64_t exp_time, uint64_t abs_exp_ackno ) : exp_time_( exp_time ), is_running_( true ) {}
+    Timer( uint64_t exp_time ) : is_running_( true ), exp_time_( exp_time ) {}
 
-    uint64_t grow( uint64_t time )
+    void grow( uint64_t time )
     {
       if ( !is_running_ ) {
         cerr << "grow a un-run timer!" << endl;
@@ -65,7 +65,7 @@ public:
       is_expired_ = ( cur_time_ >= exp_time_ );
     };
 
-    bool is_expired() { return is_expired; }
+    bool is_expired() { return is_expired_; }
 
     void reset( uint64_t exp_time )
     {
@@ -79,7 +79,6 @@ public:
 
     bool is_running_ { false };
     bool is_expired_ { false };
-    // uint64_t abs_exp_ackno_ { 0 }; // after expire, hope ack has been acknowledged
     uint64_t exp_time_ { 0 }; // expire time, should be init in constructor, in ms
     uint64_t cur_time_ { 0 };
   };
@@ -101,8 +100,8 @@ private:
   uint retx_cnt_ { 0 };        // retransmit count
   bool is_con_retx_ { false }; // consecutive retransmit
 
-  Timer timer_;
+  Timer timer_ {};
 
   uint64_t wnd_size_ { 1 };
-  std::map<uint64_t, TCPSenderMessage> ost_segs_; // outstanding segments, <seqno, msg>
+  std::map<uint64_t, TCPSenderMessage> ost_segs_ {}; // outstanding segments, <seqno, msg>
 };
