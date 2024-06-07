@@ -178,8 +178,8 @@ void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& trans
     cerr << "timer_ is already off in tick() if receive() get all segments acknowledged" << endl;
     if ( ( abs_last_ackno_ != abs_exp_ackno_ ) ) {
       cerr << "error: abs_last_ackno_ != abs_exp_ackno_" << endl;
-      std::cout << "abs_last_ackno_:" << abs_last_ackno_ << std::endl;
-      std::cout << "abs_exp_ackno_:" << abs_exp_ackno_ << std::endl;
+      cerr << "abs_last_ackno_:" << abs_last_ackno_ << std::endl;
+      cerr << "abs_exp_ackno_:" << abs_exp_ackno_ << std::endl;
     }
     timer_.turnoff();
     return;
