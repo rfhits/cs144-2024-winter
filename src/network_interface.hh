@@ -6,6 +6,14 @@
 #include "ethernet_frame.hh"
 #include "ipv4_datagram.hh"
 
+
+#define DEBUG
+#ifdef DEBUG
+#define debug_print(...) std::cerr << __VA_ARGS__ << std::endl;
+#else
+#define debug_print(...)
+#endif
+
 // A "network interface" that connects IP (the internet layer, or network layer)
 // with Ethernet (the network access layer, or link layer).
 
@@ -66,6 +74,11 @@ public:
   std::queue<InternetDatagram>& datagrams_received() { return datagrams_received_; }
 
 private:
+  // want to know
+  ARPMessage generate_request_arp( uint32_t query_ip ) const;
+  EthernetFrame pack_arp( ARPMessage const& arp_msg ) const;
+  
+private:
   // Human-readable name of the interface
   std::string name_;
 
@@ -81,4 +94,15 @@ private:
 
   // Datagrams that have been received
   std::queue<InternetDatagram> datagrams_received_ {};
+
+  // Datagrams that destination don't know, queued
+  // List[Pair[ip_datagram, dst_ip]]
+  std::deque<pair<InternetDatagram, uint32_t>> datagrams_queued_ {};
+
+  using rtable_entry = tuple<uint32_t, EthernetAddress, uint64_t>;
+  deque<rtable_entry> rtable; // router table: List[Tuple(ip_addr, eth_addr, live_time)]
+
+  // arp in flight in last 5s
+  // List[pair(ip_addr, time_pass)]
+  deque<pair<uint32_t, uint64_t>> pending_arp_reqs_;
 };
