@@ -29,7 +29,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
 {
   // Your code here.
   auto dst_ip = next_hop.ipv4_numeric();
-  debug_print( "send datagram to ip: " << dst_ip );
+  debug_print( name_ << " send datagram to ip: " << next_hop.to_string() );
 
   // search next_hop in rtable_
   // if found, send
@@ -43,27 +43,28 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     }
   }
 
+  datagrams_queued_.push_back( make_pair( dgram, dst_ip ) );
+
   // if already sent arp, just wait
   for ( auto const& entry : pending_arp_reqs_ ) {
     auto const [ip_addr, time_pass] = entry;
     if ( ip_addr == next_hop.ipv4_numeric() ) {
-      datagrams_queued_.push_back( make_pair( dgram, ip_addr ) );
       return;
     }
   }
 
-  debug_print( "can't find ip in table and pending arps:" << dst_ip );
+  debug_print( "can't find ip in table and pending arps:" << next_hop.to_string() );
   EthernetFrame eth_frame = pack_arp( generate_arp_request( dst_ip ) );
   port_->transmit( *this, eth_frame );
   pending_arp_reqs_.push_back( make_pair( dst_ip, 0 ) );
-  datagrams_queued_.push_back( make_pair( dgram, dst_ip ) );
+  debug_print("current datagrams_queued.size: " << datagrams_queued_.size());
 }
 
 //! \param[in] frame the incoming Ethernet frame
 void NetworkInterface::recv_frame( const EthernetFrame& frame )
 {
   // Your code here.
-  (void)frame;
+  debug_print( name_ << " receive a frame" );
   EthernetAddress dst_eth_addr = frame.header.dst;
   if ( dst_eth_addr != ETHERNET_BROADCAST && dst_eth_addr != ethernet_address_ ) {
     debug_print( "receiver an address not self and broadcast" );
@@ -196,7 +197,8 @@ EthernetFrame NetworkInterface::pack_dgram( InternetDatagram const& dgram,
 
 void NetworkInterface::flush_pending( uint32_t ip, EthernetAddress const& eth_addr )
 {
-  debug_print( "flush pending use ip:" << ip << " eth_addr: " << to_string( eth_addr ) );
+  debug_print( name_ << " flush pending use ip:" << Address::from_ipv4_numeric( ip ).to_string()
+                     << " eth_addr: " << to_string( eth_addr ) );
 
   // auto match_ip = [ip]( pair<uint32_t, uint64_t> const& ip_time ) { return ( ip_time.first == ip ); };
 
@@ -208,6 +210,7 @@ void NetworkInterface::flush_pending( uint32_t ip, EthernetAddress const& eth_ad
 
   debug_print( "after flush: " << pending_arp_reqs_.size() );
 
+  debug_print( "before flush datagrams_queued.size: " << datagrams_queued_.size() );
   for ( auto it = datagrams_queued_.begin(); it != datagrams_queued_.end(); ) {
     if ( it->second == ip ) {
       debug_print( "in flush find an ip match in queued datagram" );
@@ -217,4 +220,5 @@ void NetworkInterface::flush_pending( uint32_t ip, EthernetAddress const& eth_ad
       ++it;
     }
   }
+  debug_print( "after flush: " << datagrams_queued_.size() );
 }

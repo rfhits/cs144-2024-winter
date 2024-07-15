@@ -7,6 +7,7 @@
 #include "address.hh"
 #include "ethernet_frame.hh"
 #include "ipv4_datagram.hh"
+#include "../util/arp_message.hh"
 
 using std::deque;
 using std::get;
