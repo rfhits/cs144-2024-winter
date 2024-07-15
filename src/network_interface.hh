@@ -1,17 +1,17 @@
 #pragma once
 
 #include <queue>
-#include <utility>
 #include <tuple>
+#include <utility>
 
 #include "address.hh"
 #include "ethernet_frame.hh"
 #include "ipv4_datagram.hh"
 
+using std::deque;
+using std::get;
 using std::pair;
 using std::tuple;
-using std::get;
-using std::deque;
 #define DEBUG
 #ifdef DEBUG
 #define debug_print( ... ) std::cerr << __VA_ARGS__ << std::endl;
@@ -84,6 +84,10 @@ private:
   ARPMessage generate_arp_reply( ARPMessage const& arp_req ) const;
   EthernetFrame pack_arp( ARPMessage const& arp_msg ) const;
   static ARPMessage extract_arp_msg( EthernetFrame const& eth_frame );
+  EthernetFrame pack_dgram( InternetDatagram const& dgram, EthernetAddress const& dst_eth_addr ) const;
+
+  // receive an arp reply, remove pending arp and send queued datagrams
+  void flush_pending( uint32_t ip, EthernetAddress const& eth_addr );
 
 private:
   // Human-readable name of the interface
@@ -108,10 +112,10 @@ private:
 
   static constexpr uint64_t rtable_entry_expire_time_ = 30 * 1000; // in ms
   using rtable_entry = tuple<uint32_t, EthernetAddress, uint64_t>;
-  deque<rtable_entry> rtable_{}; // router table: List[Tuple(ip_addr, eth_addr, live_time)]
+  deque<rtable_entry> rtable_ {}; // router table: List[Tuple(ip_addr, eth_addr, live_time)]
 
   // arp in flight in last 5s
   // List[pair(ip_addr, time_pass)]
   static constexpr uint64_t pending_arp_req_expire_time_ = 5 * 1000; // in ms
-  deque<pair<uint32_t, uint64_t>> pending_arp_reqs_{};
+  deque<pair<uint32_t, uint64_t>> pending_arp_reqs_ {};
 };

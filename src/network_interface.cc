@@ -35,21 +35,10 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
   // if found, send
   // else queue and sent arp
 
-  for ( auto& entry : rtable_ ) {
+  for ( auto const& entry : rtable_ ) {
     auto [ip_addr, eth_addr, live_time] = entry;
     if ( ip_addr == next_hop.ipv4_numeric() ) {
-      EthernetFrame eth_frame;
-
-      eth_frame.header.dst = eth_addr;
-      eth_frame.header.src = ethernet_address_;
-      eth_frame.header.type = EthernetHeader::TYPE_IPv4;
-
-      Serializer serializer;
-      dgram.serialize( serializer );
-
-      eth_frame.payload = std::move( serializer.output() );
-
-      port_->transmit( *this, eth_frame );
+      port_->transmit( *this, pack_dgram( dgram, eth_addr ) );
       return;
     }
   }
@@ -98,6 +87,8 @@ void NetworkInterface::recv_frame( const EthernetFrame& frame )
     auto src_eth_addr = arp_msg.sender_ethernet_address;
     rtable_.push_back( { src_ip, src_eth_addr, 0 } );
 
+    flush_pending(src_ip, src_eth_addr);
+
     // if arp request, reply
     if ( arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == ip_address_.ipv4_numeric() ) {
       debug_print( "reply for received arp" );
@@ -139,7 +130,7 @@ ARPMessage NetworkInterface::generate_arp_request( uint32_t const query_ip ) con
   arp_msg.sender_ethernet_address = ethernet_address_;
   arp_msg.sender_ip_address = ip_address_.ipv4_numeric();
 
-  arp_msg.target_ethernet_address = ETHERNET_BROADCAST;
+  arp_msg.target_ethernet_address = ETHERNET_ZERO;
   arp_msg.target_ip_address = query_ip;
 
   return arp_msg;
@@ -164,7 +155,9 @@ EthernetFrame NetworkInterface::pack_arp( ARPMessage const& arp_msg ) const
 
   EthernetFrame eth_frame;
   eth_frame.header.src = ethernet_address_;
-  eth_frame.header.dst = arp_msg.target_ethernet_address;
+
+  eth_frame.header.dst
+    = ( arp_msg.target_ethernet_address == ETHERNET_ZERO ) ? ETHERNET_BROADCAST : arp_msg.target_ethernet_address;
   eth_frame.header.type = EthernetHeader::TYPE_ARP;
 
   Serializer serializer;
@@ -184,4 +177,44 @@ ARPMessage NetworkInterface::extract_arp_msg( EthernetFrame const& eth_frame )
 
   debug_print( arp_msg.to_string() );
   return arp_msg;
+}
+
+EthernetFrame NetworkInterface::pack_dgram( InternetDatagram const& dgram,
+                                            EthernetAddress const& dst_eth_addr ) const
+{
+  EthernetFrame frame;
+  frame.header.dst = dst_eth_addr;
+  frame.header.src = ethernet_address_;
+  frame.header.type = EthernetHeader::TYPE_IPv4;
+
+  Serializer serializer;
+  dgram.serialize( serializer );
+
+  frame.payload = std::move( serializer.output() );
+  return frame;
+}
+
+void NetworkInterface::flush_pending( uint32_t ip, EthernetAddress const& eth_addr )
+{
+  debug_print( "flush pending use ip:" << ip << " eth_addr: " << to_string( eth_addr ) );
+
+  // auto match_ip = [ip]( pair<uint32_t, uint64_t> const& ip_time ) { return ( ip_time.first == ip ); };
+
+  debug_print( "before flush pending_arps.size: " << pending_arp_reqs_.size() );
+  pending_arp_reqs_.erase( remove_if( pending_arp_reqs_.begin(),
+                                      pending_arp_reqs_.end(),
+                                      [ip]( auto const& ip_time ) { return ( ip_time.first == ip ); } ),
+                           pending_arp_reqs_.end() );
+
+  debug_print( "after flush: " << pending_arp_reqs_.size() );
+
+  for ( auto it = datagrams_queued_.begin(); it != datagrams_queued_.end(); ) {
+    if ( it->second == ip ) {
+      debug_print("in flush find an ip match in queued datagram");
+      port_->transmit( *this, pack_dgram( it->first, eth_addr ) );
+      it = datagrams_queued_.erase( it );
+    } else {
+      ++it;
+    }
+  }
 }
