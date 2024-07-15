@@ -87,7 +87,7 @@ void NetworkInterface::recv_frame( const EthernetFrame& frame )
     auto src_eth_addr = arp_msg.sender_ethernet_address;
     rtable_.push_back( { src_ip, src_eth_addr, 0 } );
 
-    flush_pending(src_ip, src_eth_addr);
+    flush_pending( src_ip, src_eth_addr );
 
     // if arp request, reply
     if ( arp_msg.opcode == ARPMessage::OPCODE_REQUEST && arp_msg.target_ip_address == ip_address_.ipv4_numeric() ) {
@@ -162,7 +162,7 @@ EthernetFrame NetworkInterface::pack_arp( ARPMessage const& arp_msg ) const
 
   Serializer serializer;
   arp_msg.serialize( serializer );
-  eth_frame.payload = serializer.output();
+  eth_frame.payload = std::move( serializer.output() );
 
   return eth_frame;
 }
@@ -210,7 +210,7 @@ void NetworkInterface::flush_pending( uint32_t ip, EthernetAddress const& eth_ad
 
   for ( auto it = datagrams_queued_.begin(); it != datagrams_queued_.end(); ) {
     if ( it->second == ip ) {
-      debug_print("in flush find an ip match in queued datagram");
+      debug_print( "in flush find an ip match in queued datagram" );
       port_->transmit( *this, pack_dgram( it->first, eth_addr ) );
       it = datagrams_queued_.erase( it );
     } else {
