@@ -11,6 +11,9 @@
 class Router
 {
 public:
+
+  static bool if_match(uint32_t ip, uint32_t route_prefix, uint8_t prefix_length);
+
   // Add an interface to the router
   // \param[in] interface an already-constructed network interface
   // \returns The index of the interface after it has been added to the router
@@ -35,4 +38,8 @@ public:
 private:
   // The router's collection of network interfaces
   std::vector<std::shared_ptr<NetworkInterface>> _interfaces {};
+
+  // router table: List[Tuple[route_prefix, prefix_length, next_hop, interface_no]]
+  using rt_entry = tuple<uint32_t, uint8_t, std::optional<Address>, size_t>;
+  deque<rt_entry> rtable_ {};
 };
